@@ -287,33 +287,15 @@ function loadSheet(){
   google.visualization.Query = google.visualization.Query || {};
   google.visualization.Query.setResponse = function(data){
     if(fired) return; fired = true;
-    diag("setResponse fired, status=" + (data && data.status));
     try{
       var d = parseSheet(data);
-      diag("parsed items=" + d.items.length + " cats=" + d.cats.length);
       try{ localStorage.setItem("malaki_sheet_cache", JSON.stringify(d)); }catch(e){}
       applyData(d);
-      diag("applied OK");
-    }catch(e){ diag("parse/apply error: " + e.message); }
+    }catch(e){}
   };
   var s = document.createElement("script");
   s.src = "https://docs.google.com/spreadsheets/d/" + SHEET_ID + "/gviz/tq?tqx=out:json&sheet=menu";
-  s.onerror = function(){ diag("gviz script LOAD ERROR"); };
   document.head.appendChild(s);
-  diag("gviz script injected");
-}
-function diag(msg){
-  try{
-    if(!new URLSearchParams(location.search).has("diag")) return;
-    var el = document.getElementById("diagbar");
-    if(!el){
-      el = document.createElement("div");
-      el.id = "diagbar";
-      el.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:#111;color:#7dff7a;font:12px/1.7 monospace;padding:8px;white-space:pre-wrap";
-      document.body.appendChild(el);
-    }
-    el.textContent += msg + "\n";
-  }catch(e){}
 }
 let cart = {};
 try{ cart = JSON.parse(localStorage.getItem(CART_KEY)||"{}"); }catch(e){ cart={}; }
@@ -345,7 +327,7 @@ function renderMenu(){
   main.innerHTML = CATS.map(c=>{
     const items = MENU.filter(i=>i.cat===c.id);
     return `<section class="cat" id="cat-${c.id}"><h2>${c.icon} ${c.name} <span class="count">${items.length}</span></h2>` +
-      items.map(i=>`<div class="item reveal">${i.img?`<img class="thumb" src="${i.img}" alt="" loading="lazy" onerror="this.remove()">`:""}<div class="info"><div class="name">${i.name}</div>` +
+      items.map(i=>`<div class="item reveal" data-id="${i.id}">${i.img?`<img class="thumb" data-zoom="1" src="${i.img}" alt="" loading="lazy" onerror="this.remove()">`:""}<div class="info"><div class="name" data-zoom="1">${i.name}</div>` +
         (i.desc?`<div class="desc">${i.desc}</div>`:"") +
         `<div class="price">${fmt(i.price)} ${CUR}</div></div><span id="st-${i.id}">${stepperHTML(i.id)}</span></div>`).join("") + `</section>`;
   }).join("");
@@ -477,6 +459,88 @@ loadSheet();
     keepalive:true
   }).catch(function(){});
 }catch(e){}})();
+</script>
+
+<style>
+.thumb{cursor:pointer}
+.name[data-zoom]{cursor:pointer}
+#lbx{position:fixed;inset:0;z-index:300;background:rgba(10,8,6,.93);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:18px;opacity:0;pointer-events:none;transition:opacity .25s}
+#lbx.open{opacity:1;pointer-events:auto}
+#lbx .card{position:relative;background:#1d1a17;border:1px solid rgba(255,255,255,.09);border-radius:20px;max-width:430px;width:100%;max-height:92vh;overflow:auto;transform:scale(.96) translateY(8px);transition:transform .25s}
+#lbx.open .card{transform:none}
+#lbx .ph{width:100%;max-height:52vh;object-fit:cover;display:block}
+#lbx .bd{padding:16px 18px 20px}
+#lbx .nm{font-size:1.25rem;font-weight:800;margin-bottom:4px}
+#lbx .ds{opacity:.8;font-size:.9rem;margin-bottom:6px}
+#lbx .pr{color:var(--acc);font-weight:800;font-size:1.1rem}
+#lbx .row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px}
+#lbx .x{position:absolute;top:12px;inset-inline-start:12px;z-index:2;width:40px;height:40px;border-radius:50%;border:none;background:rgba(0,0,0,.45);color:#fff;font-size:1.1rem;cursor:pointer}
+#lbx .ctl{display:flex;align-items:center;gap:10px}
+#lbx .qbtn{width:42px;height:42px;border-radius:12px;border:none;background:var(--acc);color:#fff;font-size:1.25rem;font-weight:800;cursor:pointer}
+#lbx .qnum{min-width:30px;text-align:center;font-weight:800;font-size:1.05rem}
+#lbx .addbtn{padding:11px 18px;border:none;border-radius:12px;background:var(--acc);color:#fff;font-weight:800;font-size:.95rem;cursor:pointer}
+@media (prefers-reduced-motion: reduce){#lbx,#lbx .card{transition:none}}
+</style>
+<script>
+/* Item photo viewer (lightbox): tap a thumbnail or item name -> big photo +
+   details + cart controls. The large image loads only on open (lazy), so the
+   menu list stays light and fast. */
+(function(){
+  var lbx = null, cur = null;
+  function build(){
+    lbx = document.createElement("div");
+    lbx.id = "lbx";
+    lbx.innerHTML = '<div class="card"><button class="x" aria-label="إغلاق">✕</button><img class="ph" alt=""><div class="bd"><div class="nm"></div><div class="ds"></div><div class="row"><span class="pr"></span><span class="ctl"></span></div></div></div>';
+    document.body.appendChild(lbx);
+    lbx.addEventListener("click", function(e){ if(e.target === lbx) close(); });
+    lbx.querySelector(".x").addEventListener("click", close);
+    document.addEventListener("keydown", function(e){ if(e.key === "Escape") close(); });
+  }
+  function ctlHTML(){
+    var q = cart[cur] || 0;
+    if(!q) return '<button class="addbtn" data-a="add">أضف للسلة 🛒</button>';
+    return '<button class="qbtn" data-a="minus">−</button><span class="qnum">' + q + '</span><button class="qbtn" data-a="plus">+</button>';
+  }
+  function renderCtl(){
+    var ctl = lbx.querySelector(".ctl");
+    ctl.innerHTML = ctlHTML();
+    ctl.querySelectorAll("[data-a]").forEach(function(b){
+      b.addEventListener("click", function(e){
+        var a = b.getAttribute("data-a");
+        chQty(cur, a === "minus" ? -1 : 1, e);
+        renderCtl();
+      });
+    });
+  }
+  function open(id){
+    var it = byId[id];
+    if(!it) return;
+    cur = id;
+    if(!lbx) build();
+    var img = lbx.querySelector(".ph");
+    if(it.img){ img.style.display = "block"; img.src = it.img.replace("=w300", "=w1000"); }
+    else { img.style.display = "none"; img.removeAttribute("src"); }
+    lbx.querySelector(".nm").textContent = it.name;
+    var ds = lbx.querySelector(".ds");
+    ds.textContent = it.desc || "";
+    ds.style.display = it.desc ? "block" : "none";
+    lbx.querySelector(".pr").textContent = (it.price != null) ? (fmt(it.price) + " " + CUR) : "";
+    renderCtl();
+    lbx.classList.add("open");
+    document.body.style.overflow = "hidden";
+  }
+  function close(){
+    if(lbx) lbx.classList.remove("open");
+    document.body.style.overflow = "";
+  }
+  document.getElementById("menu").addEventListener("click", function(e){
+    var t = e.target.closest("[data-zoom]");
+    if(!t) return;
+    var card = t.closest(".item");
+    if(!card || !card.dataset.id) return;
+    open(card.dataset.id);
+  });
+})();
 </script>
 </body>
 </html>
