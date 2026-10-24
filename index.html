@@ -278,7 +278,7 @@ function applyData(d){
   const nums = document.querySelectorAll(".stat .num");
   if(nums[0]){ nums[0].textContent = MENU.length; nums[0].dataset.count = MENU.length; nums[0].dataset.live = "1"; }
   if(nums[1]){ nums[1].textContent = CATS.length; nums[1].dataset.count = CATS.length; nums[1].dataset.live = "1"; }
-  if(nums[2]) nums[2].dataset.live = "1";
+  if(nums[2]){ nums[2].dataset.live = "1"; nums[2].textContent = (nums[2].dataset.count || "") + (nums[2].dataset.suffix || ""); }
 }
 function loadSheet(){
   var fired = false;
