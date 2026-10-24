@@ -287,15 +287,33 @@ function loadSheet(){
   google.visualization.Query = google.visualization.Query || {};
   google.visualization.Query.setResponse = function(data){
     if(fired) return; fired = true;
+    diag("setResponse fired, status=" + (data && data.status));
     try{
       var d = parseSheet(data);
+      diag("parsed items=" + d.items.length + " cats=" + d.cats.length);
       try{ localStorage.setItem("malaki_sheet_cache", JSON.stringify(d)); }catch(e){}
       applyData(d);
-    }catch(e){}
+      diag("applied OK");
+    }catch(e){ diag("parse/apply error: " + e.message); }
   };
   var s = document.createElement("script");
   s.src = "https://docs.google.com/spreadsheets/d/" + SHEET_ID + "/gviz/tq?tqx=out:json&sheet=menu";
+  s.onerror = function(){ diag("gviz script LOAD ERROR"); };
   document.head.appendChild(s);
+  diag("gviz script injected");
+}
+function diag(msg){
+  try{
+    if(!new URLSearchParams(location.search).has("diag")) return;
+    var el = document.getElementById("diagbar");
+    if(!el){
+      el = document.createElement("div");
+      el.id = "diagbar";
+      el.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:#111;color:#7dff7a;font:12px/1.7 monospace;padding:8px;white-space:pre-wrap";
+      document.body.appendChild(el);
+    }
+    el.textContent += msg + "\n";
+  }catch(e){}
 }
 let cart = {};
 try{ cart = JSON.parse(localStorage.getItem(CART_KEY)||"{}"); }catch(e){ cart={}; }
