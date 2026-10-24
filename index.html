@@ -181,6 +181,7 @@ footer b{color:var(--org-dk)}
 function startCounters(delay){
   setTimeout(function(){
     document.querySelectorAll('.num[data-count]').forEach(function(el){
+      if(el.dataset.live) return;
       var target = +el.dataset.count, suffix = el.dataset.suffix||'', t0 = null;
       function step(ts){
         if(!t0) t0 = ts;
@@ -240,10 +241,7 @@ function driveImg(v){
   if(/^https?:\/\//.test(v)) return v;
   return "";
 }
-function parseSheet(text){
-  const m = text.match(/setResponse\(([\s\S]*)\)\s*;?\s*$/);
-  if(!m) throw new Error("bad gviz");
-  const data = JSON.parse(m[1]);
+function parseSheet(data){
   const rows = (data.table && data.table.rows) || [];
   const items = [], seen = [], catSet = new Set();
   rows.forEach((r, idx) => {
@@ -276,25 +274,28 @@ function parseSheet(text){
 function applyData(d){
   CATS = d.cats; MENU = d.items; rebuildById();
   Object.keys(cart).forEach(k => { if(!byId[k]) delete cart[k]; });
-  save(); try{
-  const cached = JSON.parse(localStorage.getItem("malaki_sheet_cache")||"null");
-  if(cached && cached.items && cached.items.length){ CATS = cached.cats; MENU = cached.items; rebuildById(); }
-}catch(e){}
-renderChips(); renderMenu();
-loadSheet();
+  save(); renderChips(); renderMenu();
   const nums = document.querySelectorAll(".stat .num");
-  if(nums[0]) nums[0].textContent = MENU.length;
-  if(nums[1]) nums[1].textContent = CATS.length;
+  if(nums[0]){ nums[0].textContent = MENU.length; nums[0].dataset.count = MENU.length; nums[0].dataset.live = "1"; }
+  if(nums[1]){ nums[1].textContent = CATS.length; nums[1].dataset.count = CATS.length; nums[1].dataset.live = "1"; }
+  if(nums[2]) nums[2].dataset.live = "1";
 }
 function loadSheet(){
-  fetch("https://docs.google.com/spreadsheets/d/" + SHEET_ID + "/gviz/tq?tqx=out:json&sheet=menu")
-    .then(r => r.text())
-    .then(t => {
-      const d = parseSheet(t);
+  var fired = false;
+  window.google = window.google || {};
+  google.visualization = google.visualization || {};
+  google.visualization.Query = google.visualization.Query || {};
+  google.visualization.Query.setResponse = function(data){
+    if(fired) return; fired = true;
+    try{
+      var d = parseSheet(data);
       try{ localStorage.setItem("malaki_sheet_cache", JSON.stringify(d)); }catch(e){}
       applyData(d);
-    })
-    .catch(() => {});
+    }catch(e){}
+  };
+  var s = document.createElement("script");
+  s.src = "https://docs.google.com/spreadsheets/d/" + SHEET_ID + "/gviz/tq?tqx=out:json&sheet=menu";
+  document.head.appendChild(s);
 }
 let cart = {};
 try{ cart = JSON.parse(localStorage.getItem(CART_KEY)||"{}"); }catch(e){ cart={}; }
@@ -432,7 +433,12 @@ $("sendWa").onclick = ()=>{
   window.open("https://wa.me/"+WA_NUMBER+"?text="+encodeURIComponent(L.join("\n")), "_blank");
 };
 
+try{
+  const cached = JSON.parse(localStorage.getItem("malaki_sheet_cache")||"null");
+  if(cached && cached.items && cached.items.length){ CATS = cached.cats; MENU = cached.items; rebuildById(); }
+}catch(e){}
 renderChips(); renderMenu();
+loadSheet();
 </script>
 
 <script>
